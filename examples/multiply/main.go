@@ -38,12 +38,16 @@ func realMain(w io.Writer, args []string) int {
 
 	importObject := wasmexec.ImportObject{
 		"go": {
-			"imultiply": func(a int32, b int32) int32 {
+			"imultiply": func(a int, b int) int {
 				return a * b
 			},
 		},
 	}
 	inst, err := wasmexec.InstantiateStreaming(f, importObject)
+	if err != nil {
+		fmt.Fprintf(w, "unexpected error: %v\n", err)
+		return 1
+	}
 
 	result, err := inst.Call("multiply", uint64(intArgs[0]), uint64(intArgs[1]))
 	if err != nil {

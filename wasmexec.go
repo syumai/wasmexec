@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"reflect"
-	"unsafe"
 
 	"github.com/go-interpreter/wagon/exec"
 	"github.com/go-interpreter/wagon/wasm"
@@ -12,25 +11,11 @@ import (
 
 type ImportObject map[string]map[string]interface{}
 
-var kindOfInt reflect.Kind
-
-func init() {
-	sizeofInt := unsafe.Sizeof(int(0))
-	switch sizeofInt {
-	case 4:
-		kindOfInt = reflect.Int32
-	case 8:
-		kindOfInt = reflect.Int64
-	default:
-		panic(fmt.Errorf("unexpected size of int: %d", sizeofInt))
-	}
-}
-
 func toValueTypeFromKind(k reflect.Kind) (wasm.ValueType, error) {
-	if k == reflect.Int {
-		k = kindOfInt
-	}
 	switch k {
+	case reflect.Int:
+		// Always treat int as int32.
+		return wasm.ValueTypeI32, nil
 	case reflect.Int32, reflect.Uint32:
 		return wasm.ValueTypeI32, nil
 	case reflect.Int64, reflect.Uint64:
@@ -58,15 +43,18 @@ func generateResolverFromImportObject(importObject ImportObject) wasm.ResolveFun
 				return nil, fmt.Errorf("kind %q is not supported for multiply object", t.Kind())
 			}
 
-			var (
-				ins, outs []reflect.Type
-			)
-			ins = append(ins, reflect.TypeOf(&exec.Process{}))
-
 			// Create FunctionSignature
 			sig := wasm.FunctionSig{Form: 0}
+
+			var ins, outs []reflect.Type
+			ins = append(ins, reflect.TypeOf(&exec.Process{}))
+
 			for i := 0; i < t.NumIn(); i++ {
 				p := t.In(i)
+				if p.Kind() == reflect.Int {
+					// Always treat int as int32
+					p = reflect.TypeOf(int32(0))
+				}
 				ins = append(ins, p)
 				vt, err := toValueTypeFromKind(p.Kind())
 				if err != nil {
@@ -76,6 +64,10 @@ func generateResolverFromImportObject(importObject ImportObject) wasm.ResolveFun
 			}
 			for i := 0; i < t.NumOut(); i++ {
 				p := t.Out(i)
+				if p.Kind() == reflect.Int {
+					// Always treat int as int32
+					p = reflect.TypeOf(int32(0))
+				}
 				outs = append(outs, p)
 				vt, err := toValueTypeFromKind(p.Kind())
 				if err != nil {
@@ -87,8 +79,28 @@ func generateResolverFromImportObject(importObject ImportObject) wasm.ResolveFun
 
 			fnType := reflect.FuncOf(ins, outs, t.IsVariadic())
 			fnValue := reflect.MakeFunc(fnType, func(args []reflect.Value) []reflect.Value {
+				var realArgs []reflect.Value
+				for i := 1; i < len(args); i++ { // ignore *exec.Process
+					p := t.In(i - 1)
+					if p.Kind() == reflect.Int {
+						realArgs = append(realArgs, reflect.ValueOf(args[i].Interface()).Convert(reflect.TypeOf(0)))
+						continue
+					}
+					realArgs = append(realArgs, args[i])
+				}
 				origFunc := reflect.ValueOf(v)
-				return origFunc.Call(args[1:]) // ignore *exec.Process
+				returnValues := origFunc.Call(realArgs)
+
+				var realReturnValues []reflect.Value
+				for i := 0; i < len(returnValues); i++ {
+					p := t.Out(i)
+					if p.Kind() == reflect.Int {
+						realReturnValues = append(realReturnValues, reflect.ValueOf(returnValues[i].Interface()).Convert(reflect.TypeOf(int32(0))))
+						continue
+					}
+					realReturnValues = append(realReturnValues, returnValues[i])
+				}
+				return realReturnValues
 			})
 
 			// Create FunctionIndexSpace
@@ -131,7 +143,7 @@ type Instance struct {
 	VM     *exec.VM
 }
 
-func (i *Instance) Call(name string, args ...uint64) (uint32, error) {
+func (i *Instance) Call(name string, args ...uint64) (uint64, error) {
 	fn, ok := i.Module.Export.Entries[name]
 	if !ok {
 		return 0, fmt.Errorf("failed to get func %q from wasm module", name)
@@ -140,9 +152,9 @@ func (i *Instance) Call(name string, args ...uint64) (uint32, error) {
 	if err != nil {
 		return 0, fmt.Errorf("unexpected error occured on execute func %q: %w", name, err)
 	}
-	result, ok := o.(uint32)
+	result, ok := reflect.ValueOf(o).Convert(reflect.TypeOf(uint64(0))).Interface().(uint64)
 	if !ok {
-		return 0, fmt.Errorf("return type must be uint32")
+		return 0, fmt.Errorf("return type must be converted to uint64")
 	}
 	return result, nil
 }
