@@ -19,6 +19,10 @@
 )
 ```
 
+```console
+$ wat2wasm multiply.wat
+```
+
 ### 2. Read Wasm binary and execute exported function
 
 * main.go
