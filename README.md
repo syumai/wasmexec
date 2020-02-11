@@ -29,7 +29,7 @@ $ wat2wasm multiply.wat
 
 ```go
 // 1. Open Wasm binary
-f, _ := os.Open("multiply.wasm")
+f, _ := os.Open("exmaple.wasm")
 defer f.Close()
 
 // 2. Create ImportObject

@@ -16,21 +16,48 @@ func generateResolverFromImportObject(importObject ImportObject) wasm.ResolveFun
 		}
 		m := wasm.NewModule()
 		m.Export.Entries = make(map[string]wasm.ExportEntry)
-		var index uint32
+		var memoryIndex, funcIndex uint32
 		for k, v := range obj {
 			rt := reflect.TypeOf(v)
-			//rv := reflect.ValueOf(v)
+			switch mem := v.(type) {
+			case *Memory:
+				panic("WIP")
+				sectionMemories := &wasm.SectionMemories{}
+				memoryEntry := wasm.Memory{
+					Limits: wasm.ResizableLimits{
+						Initial: mem.initial,
+					},
+				}
+				if mem.maximum > 0 {
+					memoryEntry.Limits.Flags = 1
+					memoryEntry.Limits.Maximum = mem.maximum
+				}
+				sectionMemories.Entries = append(sectionMemories.Entries, memoryEntry)
+				m.Memory = sectionMemories
+				m.LinearMemoryIndexSpace = make([][]byte, 1)
+				m.LinearMemoryIndexSpace[0] = mem.Buffer()
+				exportEntry := wasm.ExportEntry{
+					FieldStr: k,
+					Kind:     wasm.ExternalMemory,
+					Index:    memoryIndex,
+				}
+				m.Export.Entries[k] = exportEntry
+				memoryIndex++
+				continue
+			}
 			switch rt.Kind() {
 			case reflect.Func:
-				sig, indexSpace, exportEntry := createFunctionSignature(k, v, index)
+				sig, indexSpace, exportEntry := createFunctionSignature(k, v, funcIndex)
 				m.Types.Entries = append(m.Types.Entries, sig)
 				m.FunctionIndexSpace = append(m.FunctionIndexSpace, indexSpace)
 				m.Export.Entries[k] = exportEntry
+				funcIndex++
+				continue
 			default:
 				return nil, fmt.Errorf("kind %q is not supported for multiply object", rt.Kind())
 			}
-			index++
 		}
+
 		return m, nil
 	}
 }
