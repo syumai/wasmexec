@@ -29,32 +29,23 @@ $ wat2wasm multiply.wat
 
 ```go
 // 1. Open Wasm binary
-f, err := os.Open("example.wasm")
-if err != nil { 
-    return nil, err
-}
+f, _ := os.Open("multiply.wasm")
 defer f.Close()
 
 // 2. Create ImportObject
 importObject := wasmexec.ImportObject{
     "go": {
-        "imultiply": func(a int32, b int32) int32 {
+        "imultiply": func(a int, b int) int{
             return a * b
         },
     },
 }
 
 // 3. Initialize WebAssembly instance
-inst, err := wasmexec.InstantiateStreaming(f, importObject)
-if err != nil {
-    return nil, err
-}
+inst, _ := wasmexec.InstantiateStreaming(f, importObject)
 
 // 4. Call exported function
-result, err := inst.Call("multiply", uint64(2), uint64(3))
-if err != nil {
-    return nil, err
-}
+result, _ := inst.Call("multiply", uint64(2), uint64(3))
 fmt.Println(result) // #=> 6
 ```
 
